@@ -1,6 +1,5 @@
 import base64
 import logging
-import re
 import select
 import socket
 
@@ -55,6 +54,7 @@ class Connection:
         self.remote_socket = remote_socket
         self.logger = logger
         self.thread = None
+        self.is_auth = False
 
     @staticmethod
     def recv_data(sock: socket.socket, chunk_size: int = 4096, timeout: float = 0.5) -> bytes:
@@ -83,20 +83,26 @@ class Connection:
 
     @staticmethod
     def add_auth_header(request: bytes, proxy_authorization: str) -> bytes:
-        headers = {}
+        headers, body = request.split(b"\r\n\r\n", 1)
+        headers_list = headers.split(b"\r\n")
 
-        request = request.decode()
-        method = re.findall(r"(.*?)\r\n", request)[0]
-        header_keys = re.findall(r"\r\n(.*?):", request)
-        header_values = re.findall(r": (.*?)\r\n", request)
-        for key, value in zip(header_keys, header_values):
-            headers[key] = value
+        modified_headers = []
+        auth_header = b"Proxy-Authorization: " + proxy_authorization.encode()
 
-        headers["Proxy-Authorization"] = proxy_authorization
+        inserted = False
+        for header in headers_list:
+            if header.startswith(b"Proxy-Authorization:"):
+                modified_headers.append(auth_header)
+                inserted = True
+            else:
+                modified_headers.append(header)
 
-        request = f"{method}\r\n"
-        request += "\r\n".join(f"{key}: {value}" for (key, value) in headers.items()) + "\r\n\r\n"
-        return request.encode()
+        if not inserted:
+            modified_headers.append(auth_header)
+
+        request = b"\r\n".join(modified_headers) + b"\r\n\r\n" + body
+
+        return request
 
     def close_connection(self) -> None:
         self.local_socket.close()
@@ -117,8 +123,9 @@ class Connection:
             self.close_connection()
             return True
 
-        if proxy_authorization and (b"CONNECT" in request or b"GET" in request):
+        if proxy_authorization and any(request.startswith(method) for method in (b"CONNECT", b"GET", b"POST")):
             request = self.add_auth_header(request, proxy_authorization)
+            self.is_auth = True
 
         self.logger.info(f"Receive {len(request)} bytes from {src_sock.getsockname()}")
 
@@ -127,8 +134,8 @@ class Connection:
         except Exception:
             self.logger.info("SECURE DATA")
 
-        if b"407 Proxy Authentication Required" in request:
-            self.logger.info(f"Disconnection from {dest_sock.getsockname()}. Proxy Authentication Required")
+        if not self.is_auth:
+            self.logger.error(f"Proxy Authentication Required. Disconnection from {src_sock.getsockname()}")
             self.close_connection()
             return True
 
