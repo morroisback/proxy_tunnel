@@ -175,17 +175,20 @@ class ProxyTunnel:
                 self.close()
                 return
 
+            for connection in self.connections.copy():
+                if not connection.thread.is_alive():
+                    self.connections.remove(connection)
+
+            thread_ids = [connection.thread_id for connection in self.connections]
+            if len(self.connections) == max_connections:
+                continue
+
             local_socket, _ = self.server_socket.accept()
 
             remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             remote_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             remote_socket.connect((self.remote_proxy.host, int(self.remote_proxy.port)))
 
-            for connection in self.connections.copy():
-                if not connection.thread.is_alive():
-                    self.connections.remove(connection)
-
-            thread_ids = [connection.thread_id for connection in self.connections]
             for thread_id in range(max_connections):
                 if thread_id in thread_ids:
                     continue
