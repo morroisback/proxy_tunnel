@@ -5,9 +5,8 @@ import socket
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from threading import Thread
 from typing import Iterator
-
-from .killable_thread import KillableThread
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -53,7 +52,7 @@ class Connection:
         self.local_socket = local_socket
         self.remote_socket = remote_socket
         self.logger = logger
-        self.thread = None
+        self.thread: Thread | None = None
         self.is_auth = False
 
     @staticmethod
@@ -207,8 +206,7 @@ class ProxyTunnel:
                     logging.getLogger(f"Connection_{thread_id}"),
                 )
 
-                thread = KillableThread(target=self.handle_client, args=(connection,))
-                connection.thread = thread
+                connection.thread = Thread(target=self.handle_client, args=(connection,))
                 self.connections.append(connection)
 
                 # self.handle_client(connection)
