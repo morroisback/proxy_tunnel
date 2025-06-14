@@ -129,7 +129,7 @@ class Connection:
         self.logger.info(f"Receive {len(request)} bytes from {src_sock.getsockname()}")
 
         try:
-            self.logger.info(f"\n{request.decode()}")
+            self.logger.info(f"\n{request.split(b"\r\n\r\n", 1)[0].decode()}")
         except Exception:
             self.logger.info("SECURE DATA")
 
